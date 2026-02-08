@@ -22,7 +22,7 @@ import "phoenix_html"
 // Establish Phoenix Socket and LiveView configuration.
 import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
-import {hooks as colocatedHooks} from "phoenix-colocated/client"
+import {hooks as colocatedHooks} from "phoenix-colocated/scim_tester"
 import topbar from "../vendor/topbar"
 
 // Configuration persistence hook
