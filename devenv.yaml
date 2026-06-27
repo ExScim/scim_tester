@@ -1,0 +1,15 @@
+inputs:
+  expert:
+    url: github:expert-lsp/expert?ref=v0.1.5
+  git-hooks:
+    url: github:cachix/git-hooks.nix
+    inputs:
+      nixpkgs:
+        follows: nixpkgs
+  nixpkgs:
+    url: github:cachix/devenv-nixpkgs/rolling
+  nixpkgs-unstable:
+    url: github:NixOS/nixpkgs/nixpkgs-unstable
+
+nixpkgs:
+  allow_unfree: false

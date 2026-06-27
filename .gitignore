@@ -7,11 +7,11 @@
 # The directory Mix downloads your dependencies sources to.
 /deps/
 
-# Where 3rd-party dependencies like ExDoc output generated docs.
+# Where third-party dependencies like ExDoc output generated docs.
 /doc/
 
-# Ignore .fetch files in case you like to edit your project deps locally.
-/.fetch
+# Temporary files, for example, from tests.
+/tmp/
 
 # If the VM crashes, it generates a dump, let's ignore it too.
 erl_crash.dump
@@ -22,20 +22,16 @@ erl_crash.dump
 # Temporary files, for example, from tests.
 /tmp/
 
-# Ignore package tarball (built via "mix hex.build").
-scim_tester-*.tar
+*.env
+!.env
 
-# Ignore assets that are produced by build tools.
-/priv/static/assets/
+# Devenv
+.devenv*
+devenv.local.nix
+devenv.local.yaml
 
-# Ignore digested assets cache.
-/priv/static/cache_manifest.json
+# direnv
+.direnv
 
-# In case you use Node.js/npm, you want to ignore these.
-npm-debug.log
-/assets/node_modules/
-
-# Database files
-*.db
-*.db-*
-
+# pre-commit
+.pre-commit-config.yaml
