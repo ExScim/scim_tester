@@ -1,6 +1,6 @@
 # SCIM Tester
 
-[![CI](https://github.com/ExScim/scim-tester/actions/workflows/ci.yml/badge.svg)](https://github.com/ExScim/scim-tester/actions/workflows/ci.yml)
+[![CI](https://github.com/ExScim/scim_tester/actions/workflows/ci.yml/badge.svg)](https://github.com/ExScim/scim_tester/actions/workflows/ci.yml)
 
 An interactive SCIM 2.0 compliance test suite.
 
