@@ -11,4 +11,4 @@ An interactive SCIM 2.0 compliance test suite.
 
 ## License
 
-[MIT](./LICENSE).
+[MIT](./LICENSE)
