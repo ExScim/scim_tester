@@ -10,6 +10,10 @@
 # Where third-party dependencies like ExDoc output generated docs.
 /doc/
 
+# Assets built by esbuild + tailwind and the digest manifest produced by "mix phx.digest".
+/priv/static/assets/
+/priv/static/cache_manifest.json
+
 # Temporary files, for example, from tests.
 /tmp/
 
