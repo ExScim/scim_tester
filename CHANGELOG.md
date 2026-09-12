@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Extracted into its own repository, independent of the ExScim umbrella
 - Depend on `ex_scim_client` via Hex instead of an umbrella path dependency
 - Refactored `ScimLive` into focused context modules and function components
+- Upgraded Phoenix LiveView to 1.2, LiveDashboard to 0.9, and gettext to 1.0
+- Bumped remaining dependencies to their latest compatible releases
+
+### Fixed
+
+- HEEx type warnings under `mix compile --warnings-as-errors` on Elixir 1.20
+- Ignore built assets and the digest manifest instead of tracking them
 
 ## [0.1.2]
 
