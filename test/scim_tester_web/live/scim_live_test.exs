@@ -8,7 +8,11 @@ defmodule ScimTesterWeb.ScimLiveTest do
 
   defp connect_client(view) do
     view
-    |> form("#config-form", %{"base_url" => @base_url, "bearer_token" => @bearer_token})
+    |> form("#config-form", %{
+      "base_url" => @base_url,
+      "auth_method" => "bearer",
+      "bearer_token" => @bearer_token
+    })
     |> render_change()
 
     view
@@ -29,6 +33,48 @@ defmodule ScimTesterWeb.ScimLiveTest do
       assert html =~ "Add Filter"
       assert html =~ "Search"
       assert html =~ "Request Preview"
+    end
+  end
+
+  describe "connection authentication methods" do
+    test "renders the authentication method selector", %{conn: conn} do
+      {:ok, _view, html} = live(conn, ~p"/")
+
+      assert html =~ "OAuth2 Client Credentials"
+      assert html =~ "Basic Auth"
+      assert html =~ ~s(name="auth_method")
+    end
+
+    test "basic auth builds a client from username and password", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/")
+
+      view
+      |> form("#config-form", %{
+        "base_url" => @base_url,
+        "auth_method" => "basic",
+        "basic_username" => "admin",
+        "basic_password" => "secret"
+      })
+      |> render_change()
+
+      # Connect is enabled once the client is built.
+      refute has_element?(view, "button.btn-disabled", "Connect")
+    end
+
+    test "oauth enables connect once required fields are present without a client", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/")
+
+      view
+      |> form("#config-form", %{
+        "base_url" => @base_url,
+        "auth_method" => "oauth",
+        "oauth_token_url" => "https://idp.example.com/token",
+        "oauth_client_id" => "id",
+        "oauth_client_secret" => "secret"
+      })
+      |> render_change()
+
+      refute has_element?(view, "button.btn-disabled", "Connect")
     end
   end
 

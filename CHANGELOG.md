@@ -11,8 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Basic auth and OAuth2 client-credentials connection methods, with custom scopes
+
 ### Changed
 
+- Universal connection panel with a selectable authentication method
 - Extracted into its own repository, independent of the ExScim umbrella
 - Depend on `ex_scim_client` via Hex instead of an umbrella path dependency
 - Refactored `ScimLive` into focused context modules and function components

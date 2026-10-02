@@ -9,12 +9,27 @@ defmodule ScimTesterWeb.ScimComponents do
   alias ScimTester.Capabilities
 
   attr(:base_url, :string, required: true)
+  attr(:auth_method, :string, required: true)
   attr(:bearer_token, :string, required: true)
+  attr(:basic_username, :string, required: true)
+  attr(:basic_password, :string, required: true)
+  attr(:oauth_token_url, :string, required: true)
+  attr(:oauth_client_id, :string, required: true)
+  attr(:oauth_client_secret, :string, required: true)
+  attr(:oauth_scopes, :string, required: true)
+  attr(:oauth_connecting, :boolean, required: true)
   attr(:client, :any, required: true)
   attr(:running, :boolean, required: true)
   attr(:capabilities, :any, required: true)
 
   def connection_panel(assigns) do
+    busy = assigns.running or assigns.capabilities == :loading or assigns.oauth_connecting
+
+    assigns =
+      assigns
+      |> assign(:connect_ready, connect_ready?(assigns))
+      |> assign(:busy, busy)
+
     ~H"""
     <div class="card bg-base-100 shadow-xl border border-base-300">
       <div class="card-body">
@@ -39,35 +54,114 @@ defmodule ScimTesterWeb.ScimComponents do
             autocomplete="on"
           />
           <.input
-            type="text"
-            name="bearer_token"
-            id="bearer_token"
-            value={@bearer_token}
-            label="Bearer Token"
-            placeholder="Enter your bearer token"
+            type="select"
+            name="auth_method"
+            id="auth_method"
+            value={@auth_method}
+            label="Authentication"
+            options={[
+              {"Bearer Token", "bearer"},
+              {"Basic Auth", "basic"},
+              {"OAuth2 Client Credentials", "oauth"}
+            ]}
             disabled={@running}
-            autocomplete="on"
           />
+          <%!-- All auth field groups stay in the DOM (toggled via `hidden`) so form
+                submission and localStorage persistence always carry every field. --%>
+          <div class={@auth_method != "bearer" && "hidden"}>
+            <.input
+              type="text"
+              name="bearer_token"
+              id="bearer_token"
+              value={@bearer_token}
+              label="Bearer Token"
+              placeholder="Enter your bearer token"
+              disabled={@running}
+              autocomplete="on"
+            />
+          </div>
+          <div class={["space-y-4", @auth_method != "basic" && "hidden"]}>
+            <.input
+              type="text"
+              name="basic_username"
+              id="basic_username"
+              value={@basic_username}
+              label="Username"
+              placeholder="Enter username"
+              disabled={@running}
+              autocomplete="on"
+            />
+            <.input
+              type="password"
+              name="basic_password"
+              id="basic_password"
+              value={@basic_password}
+              label="Password"
+              placeholder="Enter password"
+              disabled={@running}
+            />
+          </div>
+          <div class={["space-y-4", @auth_method != "oauth" && "hidden"]}>
+            <.input
+              type="url"
+              name="oauth_token_url"
+              id="oauth_token_url"
+              value={@oauth_token_url}
+              label="Token URL"
+              placeholder="https://idp.example.com/.../token"
+              disabled={@running}
+              autocomplete="on"
+            />
+            <.input
+              type="text"
+              name="oauth_client_id"
+              id="oauth_client_id"
+              value={@oauth_client_id}
+              label="Client ID"
+              placeholder="Enter client ID"
+              disabled={@running}
+              autocomplete="on"
+            />
+            <.input
+              type="password"
+              name="oauth_client_secret"
+              id="oauth_client_secret"
+              value={@oauth_client_secret}
+              label="Client Secret"
+              placeholder="Enter client secret"
+              disabled={@running}
+            />
+            <.input
+              type="text"
+              name="oauth_scopes"
+              id="oauth_scopes"
+              value={@oauth_scopes}
+              label="Scopes"
+              placeholder="space-separated (optional)"
+              disabled={@running}
+              autocomplete="off"
+            />
+          </div>
         </form>
 
         <div class="mt-4 flex gap-2">
           <button
             phx-click="connect"
-            disabled={is_nil(@client) or @running or @capabilities == :loading}
+            disabled={not @connect_ready or @busy}
             class={[
               "btn flex-1",
-              if(is_nil(@client) or @running or @capabilities == :loading,
-                do: "btn-disabled",
-                else: "btn-primary"
-              )
+              if(not @connect_ready or @busy, do: "btn-disabled", else: "btn-primary")
             ]}
           >
-            <%= if @capabilities == :loading do %>
-              <span class="loading loading-spinner loading-xs"></span> Connecting...
-            <% else %>
-              <.icon name="hero-signal" class="size-4" /> {if match?({:ok, _}, @capabilities),
-                do: "Reconnect",
-                else: "Connect"}
+            <%= cond do %>
+              <% @oauth_connecting -> %>
+                <span class="loading loading-spinner loading-xs"></span> Requesting token...
+              <% @capabilities == :loading -> %>
+                <span class="loading loading-spinner loading-xs"></span> Connecting...
+              <% true -> %>
+                <.icon name="hero-signal" class="size-4" /> {if match?({:ok, _}, @capabilities),
+                  do: "Reconnect",
+                  else: "Connect"}
             <% end %>
           </button>
           <button
@@ -223,8 +317,8 @@ defmodule ScimTesterWeb.ScimComponents do
             </div>
 
             <div class="divider my-2"></div>
-            
-    <!-- Domain fields (always visible) -->
+
+            <!-- Domain fields (always visible) -->
             <div class="space-y-3 mb-4">
               <div>
                 <label class="label"><span class="label-text text-sm">Email Domain</span></label>
@@ -300,4 +394,14 @@ defmodule ScimTesterWeb.ScimComponents do
     <% end %>
     """
   end
+
+  # For OAuth the client is only built after a token is fetched, so readiness is
+  # based on the required fields being present. Bearer/Basic build the client
+  # synchronously, so a non-nil client means ready.
+  defp connect_ready?(%{auth_method: "oauth"} = assigns) do
+    assigns.oauth_token_url != "" and assigns.oauth_client_id != "" and
+      assigns.oauth_client_secret != ""
+  end
+
+  defp connect_ready?(assigns), do: not is_nil(assigns.client)
 end

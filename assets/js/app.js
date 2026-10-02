@@ -26,6 +26,19 @@ import {hooks as colocatedHooks} from "phoenix-colocated/scim_tester"
 import topbar from "../vendor/topbar"
 
 // Configuration persistence hook
+// Connection fields persisted in localStorage (prefixed with `scim_`).
+const CONFIG_FIELDS = [
+  "base_url",
+  "auth_method",
+  "bearer_token",
+  "basic_username",
+  "basic_password",
+  "oauth_token_url",
+  "oauth_client_id",
+  "oauth_client_secret",
+  "oauth_scopes"
+]
+
 const ConfigPersistence = {
   mounted() {
     // Listen for server events to load saved config
@@ -36,11 +49,11 @@ const ConfigPersistence = {
         if (raw) dataGenConfig = JSON.parse(raw)
       } catch (_) {}
 
-      const savedConfig = {
-        base_url: localStorage.getItem("scim_base_url") || "",
-        bearer_token: localStorage.getItem("scim_bearer_token") || "",
-        data_gen_config: dataGenConfig
+      const savedConfig = {data_gen_config: dataGenConfig}
+      for (const field of CONFIG_FIELDS) {
+        savedConfig[field] = localStorage.getItem(`scim_${field}`) || ""
       }
+      if (!savedConfig.auth_method) savedConfig.auth_method = "bearer"
 
       // Send saved config back to server
       this.pushEvent("config_loaded", savedConfig)
@@ -51,14 +64,15 @@ const ConfigPersistence = {
       localStorage.setItem("scim_data_gen_config", JSON.stringify(config))
     })
 
-    // Save config on form changes
+    // Save config on form changes. Only persist fields present in the form so a
+    // hidden auth group never clobbers a previously saved value.
     this.el.addEventListener("change", (e) => {
       const formData = new FormData(this.el)
-      const base_url = formData.get("base_url") || ""
-      const bearer_token = formData.get("bearer_token") || ""
-
-      localStorage.setItem("scim_base_url", base_url)
-      localStorage.setItem("scim_bearer_token", bearer_token)
+      for (const field of CONFIG_FIELDS) {
+        if (formData.has(field)) {
+          localStorage.setItem(`scim_${field}`, formData.get(field) || "")
+        }
+      }
     })
   }
 }

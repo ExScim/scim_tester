@@ -7,7 +7,15 @@
       <div class="lg:col-span-1">
         <ScimComponents.connection_panel
           base_url={@base_url}
+          auth_method={@auth_method}
           bearer_token={@bearer_token}
+          basic_username={@basic_username}
+          basic_password={@basic_password}
+          oauth_token_url={@oauth_token_url}
+          oauth_client_id={@oauth_client_id}
+          oauth_client_secret={@oauth_client_secret}
+          oauth_scopes={@oauth_scopes}
+          oauth_connecting={@oauth_connecting}
           client={@client}
           running={@running}
           capabilities={@capabilities}

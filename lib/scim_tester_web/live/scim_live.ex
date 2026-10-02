@@ -16,7 +16,15 @@ defmodule ScimTesterWeb.ScimLive do
     socket =
       assign(socket,
         base_url: "",
+        auth_method: "bearer",
         bearer_token: "",
+        basic_username: "",
+        basic_password: "",
+        oauth_token_url: "",
+        oauth_client_id: "",
+        oauth_client_secret: "",
+        oauth_scopes: "",
+        oauth_connecting: false,
         client: nil,
         test_results: ScimTesting.init_test_results(),
         current_test: nil,
@@ -63,16 +71,10 @@ defmodule ScimTesterWeb.ScimLive do
   # --- Connection / configuration ---
 
   def handle_event("update_config", params, socket) do
-    base_url = Map.get(params, "base_url", socket.assigns.base_url)
-    bearer_token = Map.get(params, "bearer_token", socket.assigns.bearer_token)
-    {:noreply, apply_config(socket, base_url, bearer_token)}
+    {:noreply, apply_config(socket, params)}
   end
 
-  def handle_event(
-        "config_loaded",
-        %{"base_url" => base_url, "bearer_token" => bearer_token} = params,
-        socket
-      ) do
+  def handle_event("config_loaded", params, socket) do
     data_gen_config =
       params
       |> Map.get("data_gen_config")
@@ -80,22 +82,19 @@ defmodule ScimTesterWeb.ScimLive do
 
     socket =
       socket
-      |> apply_config(base_url, bearer_token)
+      |> apply_config(params)
       |> assign(data_gen_config: data_gen_config)
 
     {:noreply, socket}
   end
 
   def handle_event("connect", _params, socket) do
-    client = socket.assigns.client
-
-    socket =
-      socket
-      |> assign(capabilities_applied: false)
-      |> maybe_fetch_capabilities(client)
-      |> maybe_fetch_schemas(client)
-
-    {:noreply, socket}
+    if socket.assigns.auth_method == "oauth" do
+      send(self(), :fetch_oauth_token)
+      {:noreply, assign(socket, oauth_connecting: true, capabilities_applied: false)}
+    else
+      {:noreply, run_discovery(socket)}
+    end
   end
 
   # --- Test runner ---
@@ -517,6 +516,37 @@ defmodule ScimTesterWeb.ScimLive do
     {:noreply, push_event(socket, "load_saved_config", %{})}
   end
 
+  def handle_info(:fetch_oauth_token, socket) do
+    live_view_pid = self()
+    config = connection_config(socket.assigns)
+
+    Task.start(fn ->
+      send(live_view_pid, {:oauth_token, Connection.fetch_token(config)})
+    end)
+
+    {:noreply, socket}
+  end
+
+  def handle_info({:oauth_token, {:ok, token}}, socket) do
+    client = Connection.client_with_token(socket.assigns.base_url, token)
+
+    socket =
+      socket
+      |> assign(client: client, oauth_connecting: false)
+      |> run_discovery()
+
+    {:noreply, socket}
+  end
+
+  def handle_info({:oauth_token, {:error, reason}}, socket) do
+    socket =
+      socket
+      |> assign(oauth_connecting: false, client: nil)
+      |> put_flash(:error, "OAuth token request failed: #{reason}")
+
+    {:noreply, socket}
+  end
+
   def handle_info({:capabilities_fetched, {:ok, body}}, socket) do
     socket = assign(socket, capabilities: {:ok, body})
 
@@ -558,12 +588,29 @@ defmodule ScimTesterWeb.ScimLive do
 
   # --- Private helpers ---
 
-  defp apply_config(socket, base_url, bearer_token) do
-    {normalized_base_url, client} = Connection.build(base_url, bearer_token)
+  @config_fields ~w(base_url auth_method bearer_token basic_username basic_password
+                    oauth_token_url oauth_client_id oauth_client_secret oauth_scopes)a
 
-    assign(socket,
+  defp apply_config(socket, params) do
+    config =
+      Map.new(@config_fields, fn field ->
+        key = Atom.to_string(field)
+        {key, Map.get(params, key, Map.fetch!(socket.assigns, field))}
+      end)
+
+    {normalized_base_url, client} = Connection.build(config)
+
+    socket
+    |> assign(
       base_url: normalized_base_url,
-      bearer_token: bearer_token,
+      auth_method: config["auth_method"],
+      bearer_token: config["bearer_token"],
+      basic_username: config["basic_username"],
+      basic_password: config["basic_password"],
+      oauth_token_url: config["oauth_token_url"],
+      oauth_client_id: config["oauth_client_id"],
+      oauth_client_secret: config["oauth_client_secret"],
+      oauth_scopes: config["oauth_scopes"],
       client: client,
       capabilities: nil,
       capabilities_applied: false,
@@ -571,6 +618,21 @@ defmodule ScimTesterWeb.ScimLive do
       schemas_loading: false,
       enabled_schemas: SearchAttributes.default_enabled_schemas()
     )
+  end
+
+  defp connection_config(assigns) do
+    Map.new(@config_fields, fn field ->
+      {Atom.to_string(field), Map.fetch!(assigns, field)}
+    end)
+  end
+
+  defp run_discovery(socket) do
+    client = socket.assigns.client
+
+    socket
+    |> assign(capabilities_applied: false)
+    |> maybe_fetch_capabilities(client)
+    |> maybe_fetch_schemas(client)
   end
 
   defp maybe_fetch_capabilities(socket, nil) do
@@ -644,18 +706,22 @@ defmodule ScimTesterWeb.ScimLive do
         {:error, "Please select at least one test to run"}
 
       socket.assigns.base_url == "" ->
-        {:error, "Please configure a valid BASE_URL (e.g., https://your-scim-server.com)"}
-
-      socket.assigns.bearer_token == "" ->
-        {:error, "Please configure a valid BEARER_TOKEN"}
+        {:error, "Please configure a valid Base URL (e.g., https://your-scim-server.com)"}
 
       socket.assigns.client == nil ->
-        {:error, "SCIM client configuration failed"}
+        {:error, auth_error(socket.assigns.auth_method)}
 
       true ->
         :ok
     end
   end
+
+  defp auth_error("basic"), do: "Please provide a Basic auth username"
+
+  defp auth_error("oauth"),
+    do: "Please click Connect to obtain an OAuth token (token URL, client ID and secret required)"
+
+  defp auth_error(_), do: "Please configure a valid Bearer Token"
 
   defp finish_test(socket, test_id, result_map) do
     socket

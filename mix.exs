@@ -61,7 +61,7 @@ defmodule ScimTester.MixProject do
       {:gettext, "~> 1.0"},
       {:jason, "~> 1.2"},
       {:bandit, "~> 1.5"},
-      {:ex_scim_client, "~> 0.2"}
+      {:ex_scim_client, "~> 0.3"}
     ]
   end
 
