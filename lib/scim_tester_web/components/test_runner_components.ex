@@ -116,8 +116,7 @@ defmodule ScimTesterWeb.TestRunnerComponents do
         </div>
 
         <%= if @progress > 0 and @progress < 100 do %>
-          <progress class="progress progress-primary w-full mt-4" value={@progress} max="100">
-          </progress>
+          <progress class="progress progress-primary w-full mt-4" value={@progress} max="100"></progress>
         <% end %>
       </div>
     </div>
