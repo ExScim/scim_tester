@@ -209,7 +209,7 @@ defmodule ScimTesterWeb.ScimLiveTest do
       connect_client(view)
 
       view
-      |> element("select[name=resource_type]")
+      |> element("#search-resource-type-form")
       |> render_change(%{"resource_type" => "Groups"})
 
       html = render(view)
@@ -221,7 +221,7 @@ defmodule ScimTesterWeb.ScimLiveTest do
       connect_client(view)
 
       view
-      |> element("select[name=resource_type]")
+      |> element("#search-resource-type-form")
       |> render_change(%{"resource_type" => "Groups"})
 
       view |> element("button", "Add Filter") |> render_click()
@@ -237,11 +237,11 @@ defmodule ScimTesterWeb.ScimLiveTest do
 
       # Set some state then switch type
       view
-      |> element("select[name=resource_type]")
+      |> element("#search-resource-type-form")
       |> render_change(%{"resource_type" => "Groups"})
 
       view
-      |> element("select[name=resource_type]")
+      |> element("#search-resource-type-form")
       |> render_change(%{"resource_type" => "Users"})
 
       refute has_element?(view, ".card-title", "Results")
@@ -269,7 +269,7 @@ defmodule ScimTesterWeb.ScimLiveTest do
 
       # Change combinator
       view
-      |> element("#filter-combinator-2")
+      |> element("#filter-combinator-form-2")
       |> render_change(%{"combinator" => "or"})
 
       # URI.encode_query encodes spaces as +, so "or" appears as "+or+" in the preview URL

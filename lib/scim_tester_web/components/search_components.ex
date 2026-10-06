@@ -61,14 +61,12 @@ defmodule ScimTesterWeb.SearchComponents do
         <div class="flex items-center justify-between mb-4">
           <h2 class="text-xl font-bold">Search & Query Composer</h2>
 
-          <select
-            phx-change="search_resource_type"
-            name="resource_type"
-            class="select select-bordered select-sm"
-          >
-            <option value="Users" selected={@search_resource_type == "Users"}>Users</option>
-            <option value="Groups" selected={@search_resource_type == "Groups"}>Groups</option>
-          </select>
+          <form id="search-resource-type-form" phx-change="search_resource_type">
+            <select name="resource_type" class="select select-bordered select-sm">
+              <option value="Users" selected={@search_resource_type == "Users"}>Users</option>
+              <option value="Groups" selected={@search_resource_type == "Groups"}>Groups</option>
+            </select>
+          </form>
         </div>
 
         <%= if @search_resource_type == "Users" do %>
@@ -162,17 +160,20 @@ defmodule ScimTesterWeb.SearchComponents do
   defp filter_row(assigns) do
     ~H"""
     <%= if @idx > 0 do %>
-      <div class="flex justify-center">
+      <form
+        id={"filter-combinator-form-#{@row.id}"}
+        phx-change="search_combinator"
+        class="flex justify-center"
+      >
         <select
           id={"filter-combinator-#{@row.id}"}
-          phx-change="search_combinator"
           name="combinator"
           class="select select-bordered select-xs"
         >
           <option value="and" selected={@search_combinator == "and"}>AND</option>
           <option value="or" selected={@search_combinator == "or"}>OR</option>
         </select>
-      </div>
+      </form>
     <% end %>
 
     <form id={"filter-row-form-#{@row.id}"} phx-change="update_filter_row">
@@ -301,18 +302,18 @@ defmodule ScimTesterWeb.SearchComponents do
         <% end %>
         <!-- Pagination -->
         <div class="flex items-center justify-between mt-4">
-          <div class="flex items-center gap-2">
+          <form
+            id="search-page-size-form"
+            phx-change="search_page_size"
+            class="flex items-center gap-2"
+          >
             <span class="text-sm opacity-70">Per page:</span>
-            <select
-              phx-change="search_page_size"
-              name="page_size"
-              class="select select-bordered select-xs"
-            >
+            <select name="page_size" class="select select-bordered select-xs">
               <%= for size <- [10, 25, 50, 100] do %>
                 <option value={size} selected={@search_page_size == size}>{size}</option>
               <% end %>
             </select>
-          </div>
+          </form>
 
           <div class="join">
             <button
