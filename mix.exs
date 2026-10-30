@@ -47,7 +47,7 @@ defmodule ScimTester.MixProject do
       {:lazy_html, ">= 0.1.0", only: :test},
       {:phoenix_live_dashboard, "~> 0.9"},
       {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},
-      {:tailwind, "~> 0.3", runtime: Mix.env() == :dev},
+      {:tailwind, "~> 0.5", runtime: Mix.env() == :dev},
       {:heroicons,
        github: "tailwindlabs/heroicons",
        tag: "v2.2.0",
@@ -60,8 +60,8 @@ defmodule ScimTester.MixProject do
       {:telemetry_poller, "~> 1.0"},
       {:gettext, "~> 1.0"},
       {:jason, "~> 1.2"},
-      {:bandit, "~> 1.5"},
-      {:ex_scim_client, "~> 0.3"}
+      {:bandit, "~> 1.14"},
+      {:ex_scim_client, "~> 0.4"}
     ]
   end
 
