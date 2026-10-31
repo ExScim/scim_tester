@@ -75,51 +75,151 @@ defmodule ScimTester.SchemaPayload do
   end
 
   @doc """
-  Generates SCIM PATCH operations from the schema.
+  Generates SCIM PATCH test cases from the schema.
 
-  Picks one non-required, mutable, non-complex, non-userName attribute and returns
-  a replace operation for it. Falls back through increasingly relaxed criteria.
+  Each case is a map with a `:label`, the `:operations` to send in one request,
+  and `:expect`, a list of `{path, value}` pairs the resource must hold after
+  the request. Covers, for attributes the schema declares:
+
+    * a simple attribute (`replace displayName`)
+    * `name` by sub-attribute path, by complex path and without a path
+    * `active` set to `false` and back to `true`
   """
-  def generate_patch_operations(schema, config \\ DataGenConfig.default()) do
+  def generate_patch_cases(schema, config \\ DataGenConfig.default()) do
     attrs = writable_attributes(schema)
 
-    # Ideal: non-required, mutable, non-complex, non-userName
+    simple_patch_cases(attrs, config) ++
+      name_patch_cases(attrs, config) ++ active_patch_cases(attrs)
+  end
+
+  @doc """
+  Returns a schema with the core User attributes the tests write when the
+  provider's schema isn't known.
+  """
+  def default_user_schema do
+    %{
+      "id" => @user_schema_uri,
+      "attributes" => [
+        %{"name" => "userName", "type" => "string", "required" => true},
+        %{"name" => "displayName", "type" => "string"},
+        %{"name" => "active", "type" => "boolean"},
+        %{
+          "name" => "name",
+          "type" => "complex",
+          "subAttributes" => [
+            %{"name" => "givenName", "type" => "string"},
+            %{"name" => "familyName", "type" => "string"}
+          ]
+        }
+      ]
+    }
+  end
+
+  @doc """
+  Returns the names of the attributes a provider returns after a write: writable
+  attributes that aren't `writeOnly` or `returned: never`.
+  """
+  def readable_attribute_names(schema) do
+    schema
+    |> writable_attributes()
+    |> Enum.reject(fn attr ->
+      Map.get(attr, "mutability") == "writeOnly" or Map.get(attr, "returned") == "never"
+    end)
+    |> Enum.map(&Map.get(&1, "name"))
+  end
+
+  defp simple_patch_cases(attrs, config) do
     candidate =
       Enum.find(attrs, fn attr ->
-        name = Map.get(attr, "name")
-        type = Map.get(attr, "type", "string")
-        required = Map.get(attr, "required", false)
-        name != "userName" and !required and type != "complex"
+        Map.get(attr, "name") not in ["userName", "name", "active"] and
+          Map.get(attr, "type", "string") == "string" and
+          not Map.get(attr, "required", false) and
+          not Map.get(attr, "multiValued", false) and
+          Map.get(attr, "mutability") not in ["immutable", "writeOnly"]
       end)
-
-    # Fallback: any mutable non-required
-    candidate =
-      candidate ||
-        Enum.find(attrs, fn attr ->
-          name = Map.get(attr, "name")
-          required = Map.get(attr, "required", false)
-          name != "userName" and !required
-        end)
 
     case candidate do
       nil ->
-        # Absolute fallback
-        [
-          %{
-            "op" => "replace",
-            "path" => "title",
-            "value" => "Senior #{DataGenConfig.random_job_title(config)}"
-          }
-        ]
+        []
 
       attr ->
         name = Map.get(attr, "name")
         value = generate_value(attr, config)
         value = if value == :skip, do: "test_#{random_string(8)}", else: value
 
-        # For complex/multi-valued attrs, use the generated value directly
-        [%{"op" => "replace", "path" => name, "value" => value}]
+        [
+          %{
+            label: "replace #{name}",
+            operations: [%{"op" => "replace", "path" => name, "value" => value}],
+            expect: [{[name], value}]
+          }
+        ]
     end
+  end
+
+  defp name_patch_cases(attrs, config) do
+    name_attr = Enum.find(attrs, &(Map.get(&1, "name") == "name"))
+
+    sub_names =
+      for sub <- Map.get(name_attr || %{}, "subAttributes", []),
+          Map.get(sub, "mutability", "readWrite") == "readWrite",
+          do: Map.get(sub, "name")
+
+    if "givenName" in sub_names and "familyName" in sub_names do
+      given = DataGenConfig.random_first_name(config)
+      [family1, family2, family3] = distinct_last_names(config, 3)
+
+      [
+        %{
+          label: "replace name.familyName",
+          operations: [%{"op" => "replace", "path" => "name.familyName", "value" => family1}],
+          expect: [{["name", "familyName"], family1}]
+        },
+        %{
+          label: "replace name",
+          operations: [
+            %{
+              "op" => "replace",
+              "path" => "name",
+              "value" => %{"givenName" => given, "familyName" => family2}
+            }
+          ],
+          expect: [{["name", "givenName"], given}, {["name", "familyName"], family2}]
+        },
+        %{
+          label: "replace without path",
+          operations: [%{"op" => "replace", "value" => %{"name" => %{"familyName" => family3}}}],
+          expect: [{["name", "givenName"], given}, {["name", "familyName"], family3}]
+        }
+      ]
+    else
+      []
+    end
+  end
+
+  defp active_patch_cases(attrs) do
+    if Enum.any?(attrs, &(Map.get(&1, "name") == "active" and Map.get(&1, "type") == "boolean")) do
+      for value <- [false, true] do
+        %{
+          label: "replace active #{value}",
+          operations: [%{"op" => "replace", "path" => "active", "value" => value}],
+          expect: [{["active"], value}]
+        }
+      end
+    else
+      []
+    end
+  end
+
+  # Consecutive cases must write different values, or a dropped write passes.
+  defp distinct_last_names(config, count) do
+    names =
+      Stream.repeatedly(fn -> DataGenConfig.random_last_name(config) end)
+      |> Stream.take(50)
+      |> Enum.uniq()
+      |> Enum.take(count)
+
+    names ++ for(i <- 1..(count - length(names))//1, do: "Test#{random_string(4)}#{i}")
   end
 
   @doc """
@@ -186,12 +286,25 @@ defmodule ScimTester.SchemaPayload do
         if multi_valued, do: [value], else: value
 
       value = name_heuristic(name, config) ->
-        value
+        declared_sub_attributes(value, sub_attributes)
 
       true ->
         type_fallback(type, multi_valued, sub_attributes, config)
     end
   end
+
+  # Drops the sub-attributes of a heuristic value the schema doesn't declare.
+  defp declared_sub_attributes(value, []), do: value
+
+  defp declared_sub_attributes(value, sub_attributes) when is_list(value) do
+    Enum.map(value, &declared_sub_attributes(&1, sub_attributes))
+  end
+
+  defp declared_sub_attributes(value, sub_attributes) when is_map(value) do
+    Map.take(value, Enum.map(sub_attributes, &Map.get(&1, "name")))
+  end
+
+  defp declared_sub_attributes(value, _sub_attributes), do: value
 
   # Name-based heuristics for known SCIM attribute names
   defp name_heuristic("userName", _config), do: "test_user_#{random_string(8)}"

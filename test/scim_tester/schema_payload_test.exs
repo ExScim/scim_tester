@@ -184,41 +184,63 @@ defmodule ScimTester.SchemaPayloadTest do
     end
   end
 
-  describe "generate_patch_operations/1" do
-    test "picks a non-required, mutable, non-complex attribute" do
-      ops = SchemaPayload.generate_patch_operations(full_user_schema())
+  describe "generate_patch_cases/1" do
+    test "covers a simple attribute, every name shape and active" do
+      labels = full_user_schema() |> SchemaPayload.generate_patch_cases() |> Enum.map(& &1.label)
 
-      assert is_list(ops)
-      assert length(ops) == 1
-
-      [op] = ops
-      assert op["op"] == "replace"
-      assert is_binary(op["path"])
-      assert op["path"] != "userName"
-      assert Map.has_key?(op, "value")
+      assert labels == [
+               "replace displayName",
+               "replace name.familyName",
+               "replace name",
+               "replace without path",
+               "replace active false",
+               "replace active true"
+             ]
     end
 
-    test "falls back gracefully when no ideal candidate exists" do
+    test "expects every value a case writes" do
+      for patch_case <- SchemaPayload.generate_patch_cases(full_user_schema()) do
+        assert [_ | _] = patch_case.expect
+
+        for {path, value} <- patch_case.expect do
+          assert is_list(path)
+          refute is_nil(value)
+        end
+      end
+    end
+
+    test "expects givenName to survive a replace without path" do
+      cases = SchemaPayload.generate_patch_cases(full_user_schema())
+      complex = Enum.find(cases, &(&1.label == "replace name"))
+      no_path = Enum.find(cases, &(&1.label == "replace without path"))
+
+      [{["name", "givenName"], given} | _] = complex.expect
+      assert {["name", "givenName"], given} in no_path.expect
+    end
+
+    test "writes a different familyName in each name case" do
+      family_names =
+        for patch_case <- SchemaPayload.generate_patch_cases(full_user_schema()),
+            {["name", "familyName"], value} <- patch_case.expect,
+            do: value
+
+      assert length(family_names) == 3
+      assert family_names == Enum.uniq(family_names)
+    end
+
+    test "returns no cases for a schema without patchable attributes" do
+      assert SchemaPayload.generate_patch_cases(minimal_schema()) == []
+    end
+
+    test "skips name when the schema doesn't declare givenName and familyName" do
       schema = %{
         "id" => @user_schema_uri,
         "attributes" => [
-          %{
-            "name" => "userName",
-            "type" => "string",
-            "required" => true,
-            "mutability" => "readWrite"
-          }
+          %{"name" => "name", "type" => "complex", "subAttributes" => [%{"name" => "formatted"}]}
         ]
       }
 
-      ops = SchemaPayload.generate_patch_operations(schema)
-
-      assert is_list(ops)
-      assert length(ops) == 1
-      [op] = ops
-      assert op["op"] == "replace"
-      # Should use absolute fallback
-      assert op["path"] == "title"
+      assert SchemaPayload.generate_patch_cases(schema) == []
     end
 
     test "does not pick userName" do
@@ -236,9 +258,23 @@ defmodule ScimTester.SchemaPayloadTest do
       }
 
       for _ <- 1..10 do
-        [op] = SchemaPayload.generate_patch_operations(schema)
-        assert op["path"] != "userName"
+        [patch_case] = SchemaPayload.generate_patch_cases(schema)
+        assert [%{"path" => "title"}] = patch_case.operations
       end
+    end
+  end
+
+  describe "readable_attribute_names/1" do
+    test "excludes writeOnly and returned-never attributes" do
+      schema = %{
+        "attributes" => [
+          %{"name" => "displayName", "type" => "string"},
+          %{"name" => "password", "type" => "string", "mutability" => "writeOnly"},
+          %{"name" => "secret", "type" => "string", "returned" => "never"}
+        ]
+      }
+
+      assert SchemaPayload.readable_attribute_names(schema) == ["displayName"]
     end
   end
 
@@ -328,6 +364,29 @@ defmodule ScimTester.SchemaPayloadTest do
         [phone | _] = payload["phoneNumbers"]
         assert is_map(phone)
       end
+    end
+  end
+
+  describe "declared sub-attributes" do
+    test "omits sub-attributes the schema doesn't declare" do
+      schema = %{
+        "id" => @user_schema_uri,
+        "attributes" => [
+          %{"name" => "userName", "type" => "string", "required" => true},
+          %{
+            "name" => "emails",
+            "type" => "complex",
+            "multiValued" => true,
+            "subAttributes" => [
+              %{"name" => "value", "type" => "string"},
+              %{"name" => "primary", "type" => "boolean"}
+            ]
+          }
+        ]
+      }
+
+      assert [email] = SchemaPayload.generate_create_payload(schema)["emails"]
+      assert Map.keys(email) |> Enum.sort() == ["primary", "value"]
     end
   end
 

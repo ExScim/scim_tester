@@ -12,6 +12,7 @@ defmodule ScimTester.ScimTesting do
   alias ExScimClient.Resources.Schemas
   alias ExScimClient.Resources.ResourceTypes
   alias ScimTester.DataGenConfig
+  alias ScimTester.ResourceCheck
   alias ScimTester.SchemaPayload
 
   @test_definitions [
@@ -350,7 +351,19 @@ defmodule ScimTester.ScimTesting do
             do: SchemaPayload.generate_update_payload(user_schema, existing_user, data_config),
             else: generate_random_user_update(existing_user, data_config)
 
-        Users.update(client, user_id, updated_data)
+        readable =
+          SchemaPayload.readable_attribute_names(
+            user_schema || SchemaPayload.default_user_schema()
+          )
+
+        expect =
+          existing_user
+          |> ResourceCheck.changes(updated_data)
+          |> Enum.filter(fn {[name | _], _value} -> name in readable end)
+
+        with {:ok, response} <- Users.update(client, user_id, updated_data) do
+          verify_write(client, user_id, "PUT", response, expect)
+        end
 
       error ->
         error
@@ -358,20 +371,51 @@ defmodule ScimTester.ScimTesting do
   end
 
   defp test_patch_user(client, user_id, user_schema, data_config) do
-    patch_operations =
-      if user_schema do
-        SchemaPayload.generate_patch_operations(user_schema, data_config)
-      else
-        [
-          %{
-            "op" => "replace",
-            "path" => "title",
-            "value" => "Senior #{DataGenConfig.random_job_title(data_config)}"
-          }
-        ]
-      end
+    cases =
+      SchemaPayload.generate_patch_cases(
+        user_schema || SchemaPayload.default_user_schema(),
+        data_config
+      )
 
-    Users.patch(client, user_id, patch_operations)
+    if cases == [] do
+      {:error, "Schema declares no attribute to PATCH"}
+    else
+      Enum.reduce_while(cases, {:ok, nil}, fn patch_case, _acc ->
+        result =
+          with {:ok, response} <- Users.patch(client, user_id, patch_case.operations) do
+            verify_write(client, user_id, "PATCH", response, patch_case.expect)
+          end
+
+        case result do
+          {:ok, user} -> {:cont, {:ok, user}}
+          {:error, reason} -> {:halt, {:error, "#{patch_case.label}: #{format_error(reason)}"}}
+        end
+      end)
+    end
+  end
+
+  # Checks the write response, when it has a body, and a fresh GET of the user.
+  defp verify_write(client, user_id, method, response, expect) do
+    with :ok <- check_written(method, "response", response, expect),
+         {:ok, fetched} <- Users.get(client, user_id),
+         :ok <- check_written(method, "GET", fetched, expect) do
+      {:ok, fetched}
+    end
+  end
+
+  defp check_written(_method, "response", response, _expect)
+       when not is_map(response) or map_size(response) == 0,
+       do: :ok
+
+  defp check_written(method, source, resource, expect) do
+    case ResourceCheck.mismatches(resource, expect) do
+      [] ->
+        :ok
+
+      mismatches ->
+        {:error,
+         "#{method} accepted but not applied (#{source}): " <> Enum.join(mismatches, "; ")}
+    end
   end
 
   defp test_list_users(client) do
