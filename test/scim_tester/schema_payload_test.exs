@@ -184,52 +184,85 @@ defmodule ScimTester.SchemaPayloadTest do
     end
   end
 
-  describe "generate_patch_cases/1" do
-    test "covers a simple attribute, every name shape and active" do
-      labels = full_user_schema() |> SchemaPayload.generate_patch_cases() |> Enum.map(& &1.label)
+  describe "generate_patch_cases/2" do
+    defp cases(schema), do: SchemaPayload.generate_patch_cases(schema, "user-1")
+    defp find_case(cases, label), do: Enum.find(cases, &(&1.label == label))
+
+    test "covers a simple attribute, every name shape, active and rejections" do
+      labels = full_user_schema() |> cases() |> Enum.map(& &1.label)
 
       assert labels == [
                "replace displayName",
+               "replace with the current id",
                "replace name.familyName",
                "replace name",
                "replace without path",
                "replace active false",
-               "replace active true"
+               "replace active true",
+               "remove displayName",
+               "replace an undeclared attribute",
+               "replace id"
              ]
     end
 
-    test "expects every value a case writes" do
-      for patch_case <- SchemaPayload.generate_patch_cases(full_user_schema()) do
-        assert [_ | _] = patch_case.expect
-
-        for {path, value} <- patch_case.expect do
-          assert is_list(path)
-          refute is_nil(value)
+    test "gives every case either expectations or accepted rejections" do
+      for patch_case <- cases(full_user_schema()) do
+        case patch_case do
+          %{expect: [_ | _]} -> :ok
+          %{reject: [_ | _]} -> :ok
         end
       end
     end
 
     test "expects givenName to survive a replace without path" do
-      cases = SchemaPayload.generate_patch_cases(full_user_schema())
-      complex = Enum.find(cases, &(&1.label == "replace name"))
-      no_path = Enum.find(cases, &(&1.label == "replace without path"))
-
-      [{["name", "givenName"], given} | _] = complex.expect
-      assert {["name", "givenName"], given} in no_path.expect
+      cases = cases(full_user_schema())
+      [{["name", "givenName"], given} | _] = find_case(cases, "replace name").expect
+      assert {["name", "givenName"], given} in find_case(cases, "replace without path").expect
     end
 
     test "writes a different familyName in each name case" do
       family_names =
-        for patch_case <- SchemaPayload.generate_patch_cases(full_user_schema()),
-            {["name", "familyName"], value} <- patch_case.expect,
+        for %{expect: expect} <- cases(full_user_schema()),
+            {["name", "familyName"], value} <- expect,
             do: value
 
       assert length(family_names) == 3
       assert family_names == Enum.uniq(family_names)
     end
 
-    test "returns no cases for a schema without patchable attributes" do
-      assert SchemaPayload.generate_patch_cases(minimal_schema()) == []
+    test "sends the current id with a new value and expects the value" do
+      cases = cases(full_user_schema())
+      [%{"value" => first}] = find_case(cases, "replace displayName").operations
+      echo = find_case(cases, "replace with the current id")
+
+      assert [%{"op" => "replace", "value" => %{"id" => "user-1", "displayName" => echoed}}] =
+               echo.operations
+
+      assert echoed != first
+      assert echo.expect == [{["displayName"], echoed}]
+    end
+
+    test "expects a removed attribute to be gone" do
+      assert %{
+               operations: [%{"op" => "remove", "path" => "displayName"}],
+               expect: [{["displayName"], nil}]
+             } =
+               find_case(cases(full_user_schema()), "remove displayName")
+    end
+
+    test "expects an undeclared attribute and id to be rejected" do
+      cases = cases(full_user_schema())
+
+      assert find_case(cases, "replace an undeclared attribute").reject == [
+               "invalidPath",
+               "noTarget"
+             ]
+
+      assert find_case(cases, "replace id").reject == ["mutability"]
+    end
+
+    test "returns only rejections for a schema without patchable attributes" do
+      assert Enum.all?(cases(minimal_schema()), &Map.has_key?(&1, :reject))
     end
 
     test "skips name when the schema doesn't declare givenName and familyName" do
@@ -240,7 +273,7 @@ defmodule ScimTester.SchemaPayloadTest do
         ]
       }
 
-      assert SchemaPayload.generate_patch_cases(schema) == []
+      assert Enum.all?(cases(schema), &Map.has_key?(&1, :reject))
     end
 
     test "does not pick userName" do
@@ -258,8 +291,8 @@ defmodule ScimTester.SchemaPayloadTest do
       }
 
       for _ <- 1..10 do
-        [patch_case] = SchemaPayload.generate_patch_cases(schema)
-        assert [%{"path" => "title"}] = patch_case.operations
+        [first | _] = cases(schema)
+        assert [%{"path" => "title"}] = first.operations
       end
     end
   end

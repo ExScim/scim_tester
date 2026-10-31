@@ -77,19 +77,27 @@ defmodule ScimTester.SchemaPayload do
   @doc """
   Generates SCIM PATCH test cases from the schema.
 
-  Each case is a map with a `:label`, the `:operations` to send in one request,
-  and `:expect`, a list of `{path, value}` pairs the resource must hold after
-  the request. Covers, for attributes the schema declares:
+  Each case is a map with a `:label` and the `:operations` to send in one
+  request. Cases the provider must accept have `:expect`, a list of
+  `{path, value}` pairs the resource must hold afterwards (`nil` for removed
+  values). Cases it must reject have `:reject`, the accepted `scimType`s of a
+  400 response.
 
-    * a simple attribute (`replace displayName`)
+  Covers, for attributes the schema declares:
+
+    * a simple attribute (`replace displayName`), set again with the current
+      `id` in a value without a path, and finally removed
     * `name` by sub-attribute path, by complex path and without a path
     * `active` set to `false` and back to `true`
+    * an undeclared attribute and the read-only `id`, which must be rejected
   """
-  def generate_patch_cases(schema, config \\ DataGenConfig.default()) do
+  def generate_patch_cases(schema, user_id, config \\ DataGenConfig.default()) do
     attrs = writable_attributes(schema)
+    simple = simple_attribute(attrs)
 
-    simple_patch_cases(attrs, config) ++
-      name_patch_cases(attrs, config) ++ active_patch_cases(attrs)
+    simple_patch_cases(simple, user_id, config) ++
+      name_patch_cases(attrs, config) ++
+      active_patch_cases(attrs) ++ remove_patch_cases(simple) ++ rejected_patch_cases()
   end
 
   @doc """
@@ -128,33 +136,70 @@ defmodule ScimTester.SchemaPayload do
     |> Enum.map(&Map.get(&1, "name"))
   end
 
-  defp simple_patch_cases(attrs, config) do
-    candidate =
-      Enum.find(attrs, fn attr ->
-        Map.get(attr, "name") not in ["userName", "name", "active"] and
-          Map.get(attr, "type", "string") == "string" and
-          not Map.get(attr, "required", false) and
-          not Map.get(attr, "multiValued", false) and
-          Map.get(attr, "mutability") not in ["immutable", "writeOnly"]
+  defp simple_attribute(attrs) do
+    Enum.find(attrs, fn attr ->
+      Map.get(attr, "name") not in ["userName", "name", "active"] and
+        Map.get(attr, "type", "string") == "string" and
+        not Map.get(attr, "required", false) and
+        not Map.get(attr, "multiValued", false) and
+        Map.get(attr, "mutability") not in ["immutable", "writeOnly"]
+    end)
+  end
+
+  defp simple_patch_cases(nil, _user_id, _config), do: []
+
+  defp simple_patch_cases(attr, user_id, config) do
+    name = Map.get(attr, "name")
+
+    [value, echoed] =
+      distinct_values(2, fn ->
+        case generate_value(attr, config) do
+          :skip -> "test_#{random_string(8)}"
+          value -> value
+        end
       end)
 
-    case candidate do
-      nil ->
-        []
+    [
+      %{
+        label: "replace #{name}",
+        operations: [%{"op" => "replace", "path" => name, "value" => value}],
+        expect: [{[name], value}]
+      },
+      %{
+        label: "replace with the current id",
+        operations: [%{"op" => "replace", "value" => %{"id" => user_id, name => echoed}}],
+        expect: [{[name], echoed}]
+      }
+    ]
+  end
 
-      attr ->
-        name = Map.get(attr, "name")
-        value = generate_value(attr, config)
-        value = if value == :skip, do: "test_#{random_string(8)}", else: value
+  defp remove_patch_cases(nil), do: []
 
-        [
-          %{
-            label: "replace #{name}",
-            operations: [%{"op" => "replace", "path" => name, "value" => value}],
-            expect: [{[name], value}]
-          }
-        ]
-    end
+  defp remove_patch_cases(attr) do
+    name = Map.get(attr, "name")
+
+    [
+      %{
+        label: "remove #{name}",
+        operations: [%{"op" => "remove", "path" => name}],
+        expect: [{[name], nil}]
+      }
+    ]
+  end
+
+  defp rejected_patch_cases do
+    [
+      %{
+        label: "replace an undeclared attribute",
+        operations: [%{"op" => "replace", "path" => "scimTesterUndeclared", "value" => "x"}],
+        reject: ["invalidPath", "noTarget"]
+      },
+      %{
+        label: "replace id",
+        operations: [%{"op" => "replace", "path" => "id", "value" => "test_#{random_string(8)}"}],
+        reject: ["mutability"]
+      }
+    ]
   end
 
   defp name_patch_cases(attrs, config) do
@@ -167,7 +212,9 @@ defmodule ScimTester.SchemaPayload do
 
     if "givenName" in sub_names and "familyName" in sub_names do
       given = DataGenConfig.random_first_name(config)
-      [family1, family2, family3] = distinct_last_names(config, 3)
+
+      [family1, family2, family3] =
+        distinct_values(3, fn -> DataGenConfig.random_last_name(config) end)
 
       [
         %{
@@ -212,14 +259,14 @@ defmodule ScimTester.SchemaPayload do
   end
 
   # Consecutive cases must write different values, or a dropped write passes.
-  defp distinct_last_names(config, count) do
-    names =
-      Stream.repeatedly(fn -> DataGenConfig.random_last_name(config) end)
+  defp distinct_values(count, generate) do
+    values =
+      Stream.repeatedly(generate)
       |> Stream.take(50)
       |> Enum.uniq()
       |> Enum.take(count)
 
-    names ++ for(i <- 1..(count - length(names))//1, do: "Test#{random_string(4)}#{i}")
+    values ++ for(i <- 1..(count - length(values))//1, do: "Test#{random_string(4)}#{i}")
   end
 
   @doc """
@@ -293,7 +340,6 @@ defmodule ScimTester.SchemaPayload do
     end
   end
 
-  # Drops the sub-attributes of a heuristic value the schema doesn't declare.
   defp declared_sub_attributes(value, []), do: value
 
   defp declared_sub_attributes(value, sub_attributes) when is_list(value) do

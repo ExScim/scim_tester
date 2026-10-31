@@ -374,19 +374,15 @@ defmodule ScimTester.ScimTesting do
     cases =
       SchemaPayload.generate_patch_cases(
         user_schema || SchemaPayload.default_user_schema(),
+        user_id,
         data_config
       )
 
-    if cases == [] do
+    if Enum.all?(cases, &Map.has_key?(&1, :reject)) do
       {:error, "Schema declares no attribute to PATCH"}
     else
       Enum.reduce_while(cases, {:ok, nil}, fn patch_case, _acc ->
-        result =
-          with {:ok, response} <- Users.patch(client, user_id, patch_case.operations) do
-            verify_write(client, user_id, "PATCH", response, patch_case.expect)
-          end
-
-        case result do
+        case run_patch_case(client, user_id, patch_case) do
           {:ok, user} -> {:cont, {:ok, user}}
           {:error, reason} -> {:halt, {:error, "#{patch_case.label}: #{format_error(reason)}"}}
         end
@@ -394,7 +390,35 @@ defmodule ScimTester.ScimTesting do
     end
   end
 
-  # Checks the write response, when it has a body, and a fresh GET of the user.
+  defp run_patch_case(client, user_id, %{reject: scim_types} = patch_case) do
+    expected = "400 " <> Enum.join(scim_types, " or ")
+
+    case Users.patch(client, user_id, patch_case.operations) do
+      {:error, %{status: 400, body: body}} ->
+        scim_type = if is_map(body), do: body["scimType"]
+
+        if scim_type in scim_types,
+          do: Users.get(client, user_id),
+          else: {:error, "rejected with scimType #{inspect(scim_type)}, expected #{expected}"}
+
+      {:error, %{status: status}} ->
+        {:error, "returned #{status}, expected #{expected}"}
+
+      {:ok, _response} ->
+        {:error, "PATCH accepted, expected #{expected}"}
+
+      error ->
+        error
+    end
+  end
+
+  defp run_patch_case(client, user_id, patch_case) do
+    with {:ok, response} <- Users.patch(client, user_id, patch_case.operations) do
+      verify_write(client, user_id, "PATCH", response, patch_case.expect)
+    end
+  end
+
+  # Checks the response, if it has a body, and a fresh GET.
   defp verify_write(client, user_id, method, response, expect) do
     with :ok <- check_written(method, "response", response, expect),
          {:ok, fetched} <- Users.get(client, user_id),

@@ -38,6 +38,11 @@ defmodule ScimTester.ResourceCheckTest do
     test "does not treat a string as a boolean" do
       assert [_] = ResourceCheck.mismatches(%{"active" => "false"}, [{["active"], false}])
     end
+
+    test "treats nil as absent" do
+      assert ResourceCheck.mismatches(%{"userName" => "jd"}, [{["displayName"], nil}]) == []
+      assert [_] = ResourceCheck.mismatches(%{"displayName" => "JD"}, [{["displayName"], nil}])
+    end
   end
 
   describe "changes/2" do
