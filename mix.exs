@@ -55,13 +55,13 @@ defmodule ScimTester.MixProject do
        app: false,
        compile: false,
        depth: 1},
-      {:req, "~> 0.5"},
+      {:req, "~> 0.7"},
       {:telemetry_metrics, "~> 1.0"},
       {:telemetry_poller, "~> 1.0"},
       {:gettext, "~> 1.0"},
       {:jason, "~> 1.2"},
       {:bandit, "~> 1.14"},
-      {:ex_scim_client, "~> 0.4"}
+      {:ex_scim_client, "~> 0.5"}
     ]
   end
 
