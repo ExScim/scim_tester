@@ -13,10 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Group tests: create, get, PUT, list, delete
+- Group membership test: add and remove the test user, `User.groups` when declared
+- Nested groups test: group members, indirect `User.groups`, circular nesting rejected
 - Basic auth and OAuth2 client-credentials connection methods, with custom scopes
 
 ### Changed
 
+- Progress advances by each enabled test's share
 - Universal connection panel with a selectable authentication method
 - Extracted into its own repository, independent of the ExScim umbrella
 - Depend on `ex_scim_client` via Hex instead of an umbrella path dependency

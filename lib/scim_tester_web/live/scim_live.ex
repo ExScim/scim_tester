@@ -33,6 +33,7 @@ defmodule ScimTesterWeb.ScimLive do
         progress: 0,
         logs: [],
         created_user_id: nil,
+        created_group_id: nil,
         enabled_tests: ScimTesting.default_enabled_tests(),
         capabilities: nil,
         capabilities_applied: false,
@@ -110,7 +111,8 @@ defmodule ScimTesterWeb.ScimLive do
             progress: 0,
             test_results: ScimTesting.init_test_results(),
             logs: [],
-            created_user_id: nil
+            created_user_id: nil,
+            created_group_id: nil
           )
 
         {:noreply, socket}
@@ -432,7 +434,7 @@ defmodule ScimTesterWeb.ScimLive do
   def handle_info(:run_tests, socket) do
     live_view_pid = self()
     enabled_tests = socket.assigns.enabled_tests
-    user_schema = get_user_schema(socket.assigns.schemas)
+    schemas = socket.assigns.schemas || %{}
     data_config = socket.assigns.data_gen_config
 
     {:ok, task_pid} =
@@ -441,7 +443,7 @@ defmodule ScimTesterWeb.ScimLive do
           live_view_pid,
           socket.assigns.client,
           enabled_tests,
-          user_schema,
+          schemas,
           data_config
         )
       end)
@@ -451,16 +453,21 @@ defmodule ScimTesterWeb.ScimLive do
 
   def handle_info({:retry_test, test_id}, socket) do
     live_view_pid = self()
-    user_schema = get_user_schema(socket.assigns.schemas)
+    schemas = socket.assigns.schemas || %{}
     data_config = socket.assigns.data_gen_config
+
+    resources = %{
+      user: socket.assigns.created_user_id,
+      group: socket.assigns.created_group_id
+    }
 
     Task.start(fn ->
       ScimTesting.run_single_test(
         live_view_pid,
         socket.assigns.client,
         test_id,
-        socket.assigns.created_user_id,
-        user_schema,
+        resources,
+        schemas,
         data_config
       )
     end)
@@ -489,6 +496,10 @@ defmodule ScimTesterWeb.ScimLive do
 
   def handle_info({:user_created, user_id}, socket) do
     {:noreply, assign(socket, created_user_id: user_id)}
+  end
+
+  def handle_info({:group_created, group_id}, socket) do
+    {:noreply, assign(socket, created_group_id: group_id)}
   end
 
   def handle_info({:log_message, message, level}, socket) do
@@ -726,14 +737,15 @@ defmodule ScimTesterWeb.ScimLive do
   defp finish_test(socket, test_id, result_map) do
     socket
     |> update(:test_results, fn results -> Map.put(results, test_id, result_map) end)
-    |> update(:progress, fn progress -> min(progress + 10, 100) end)
+    |> update(:progress, fn progress -> min(progress + progress_step(socket), 100) end)
     |> then(fn s ->
       if s.assigns.current_test == test_id, do: assign(s, current_test: nil), else: s
     end)
   end
 
-  defp get_user_schema(nil), do: nil
-  defp get_user_schema(schemas), do: Map.get(schemas, SearchAttributes.user_schema_id())
+  # Each finished test advances the progress bar by an equal share of the enabled tests.
+  defp progress_step(socket),
+    do: ceil(100 / max(MapSet.size(socket.assigns.enabled_tests), 1))
 
   defp maybe_put_param(row, params, param_key, row_key) do
     case Map.fetch(params, param_key) do
