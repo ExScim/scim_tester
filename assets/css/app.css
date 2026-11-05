@@ -5,6 +5,7 @@
 @source "../css";
 @source "../js";
 @source "../../lib/scim_tester_web";
+@source "../../lib/scim_tester/scim_testing.ex";
 
 /* A Tailwind plugin that makes "hero-#{ICON}" classes available.
    The heroicons installation itself is managed by your mix.exs */
@@ -107,5 +108,3 @@
 
 /* This file is for your main application CSS */
 
-/* Safe list the heroicons used by the SCIM tests */
-@source inline("hero-beaker");
